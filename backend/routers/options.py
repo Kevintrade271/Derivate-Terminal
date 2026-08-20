@@ -227,3 +227,11 @@ def spot_endpoint(
         raise
     except Exception:
         raise HTTPException(status_code=500, detail="Error fetching spot data")
+
+@router.get("/vanna-charm", response_model=VannaCharmResponse)
+def vanna_charm_endpoint(query: TickerQuery = Depends()):
+    """Calculate Vanna and Charm Exposure per strike."""
+    try:
+        return get_vanna_charm_profile(query.ticker, query.expiries)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
