@@ -10,12 +10,12 @@
    --------------------------------------------------------------------------- */
 :root {
   /* Backgrounds */
-  --bg-primary: #060a13;
-  --bg-secondary: #0c1220;
-  --bg-tertiary: #111827;
-  --bg-card: rgba(15, 23, 42, 0.65);
-  --bg-card-hover: rgba(20, 30, 55, 0.75);
-  --bg-glass: rgba(15, 23, 42, 0.45);
+  --bg-primary: #000000;
+  --bg-secondary: #080808;
+  --bg-tertiary: #111111;
+  --bg-card: rgba(15, 15, 15, 0.65);
+  --bg-card-hover: rgba(25, 25, 25, 0.75);
+  --bg-glass: rgba(10, 10, 10, 0.45);
 
   /* Accent Colors */
   --accent-green: #00e676;
