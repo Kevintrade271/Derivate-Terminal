@@ -8,6 +8,9 @@ import './index.css';
 export default function App() {
   const [spotData, setSpotData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [globalGex, setGlobalGex] = useState(null);
+  const [globalOi, setGlobalOi] = useState(null);
+  const [ticker, setTicker] = useState('^SPX');
 
   const handleRefresh = useCallback(() => {
     if (window.__dashboardRefresh) {
@@ -18,13 +21,24 @@ export default function App() {
   return (
     <div className="app-layout">
         <Sidebar />
-        <Header spotData={spotData} onRefresh={handleRefresh} loading={loading} />
+        <Header 
+          ticker={ticker}
+          onTickerChange={setTicker}
+          spotData={spotData} 
+          gexData={globalGex}
+          oiData={globalOi}
+          onRefresh={handleRefresh} 
+          loading={loading} 
+        />
         <Routes>
           <Route
             path="/"
             element={
               <Dashboard
+                ticker={ticker}
                 onSpotData={setSpotData}
+                setGlobalGex={setGlobalGex}
+                setGlobalOi={setGlobalOi}
                 setLoading={setLoading}
                 loading={loading}
               />

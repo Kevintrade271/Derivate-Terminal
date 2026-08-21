@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 # ---------------------------------------------------------------------------
 # Shared
 # ---------------------------------------------------------------------------
-TICKER_PATTERN = re.compile(r"^[\^A-Z0-9]{1,10}$")
+TICKER_PATTERN = re.compile(r"^[\^A-Z0-9=]{1,10}$")
 
 
 class TickerQuery(BaseModel):

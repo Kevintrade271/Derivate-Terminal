@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { createChart, ColorType, LineStyle, CandlestickSeries } from 'lightweight-charts';
 
-export default function SpotChart({ spotData, gexData, tf, onTfChange }) {
+export default function SpotChart({ spotData, gexData, ivData, tf, onTfChange }) {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
 
@@ -90,11 +90,52 @@ export default function SpotChart({ spotData, gexData, tf, onTfChange }) {
       if (gexData.zero_gamma) {
         candlestickSeries.createPriceLine({
           price: gexData.zero_gamma,
-          color: '#448aff',
+          color: '#e2e8f0', // White/Gray for contrast
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: 'Gamma Flip',
+        });
+      }
+    }
+
+    // Expected Move calculation
+    if (ivData?.iv_points?.length && spotData?.price) {
+      const spot = spotData.price;
+      // Find ATM IV
+      let atmPoint = ivData.iv_points[0];
+      let minDiff = Infinity;
+      ivData.iv_points.forEach(p => {
+        const diff = Math.abs(p.strike - spot);
+        if (diff < minDiff) {
+          minDiff = diff;
+          atmPoint = p;
+        }
+      });
+
+      const atmIv = atmPoint.call_iv || atmPoint.put_iv;
+      if (atmIv) {
+        // Daily expected move formula: Spot * (IV / sqrt(252))
+        const expectedMove = spot * (atmIv / Math.sqrt(252));
+        const upperEM = spot + expectedMove;
+        const lowerEM = spot - expectedMove;
+
+        candlestickSeries.createPriceLine({
+          price: upperEM,
+          color: 'rgba(255, 152, 0, 0.8)',
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: true,
-          title: 'Zero γ',
+          title: '+1σ EM',
+        });
+
+        candlestickSeries.createPriceLine({
+          price: lowerEM,
+          color: 'rgba(255, 152, 0, 0.8)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: '-1σ EM',
         });
       }
     }
@@ -117,12 +158,12 @@ export default function SpotChart({ spotData, gexData, tf, onTfChange }) {
         chartRef.current = null;
       }
     };
-  }, [spotData, gexData]);
+  }, [spotData, gexData, ivData]);
 
   if (!spotData?.candles?.length) {
     return (
       <div className="card span-2">
-        <div className="card-title"><span className="dot blue" /> Precio SPX</div>
+        <div className="card-title"><span className="dot blue" /> Precio {spotData?.ticker || 'SPX'}</div>
         <div className="loading-container">
           <div className="spinner" />
           <span>Cargando gráfico...</span>
@@ -134,7 +175,7 @@ export default function SpotChart({ spotData, gexData, tf, onTfChange }) {
   return (
     <div className="card span-2 fade-in" id="spot-chart-card">
       <div className="card-title" style={{ display: 'flex', alignItems: 'center' }}>
-        <div><span className="dot blue" /> Precio SPX — {tf.toUpperCase()}</div>
+        <div><span className="dot blue" /> Precio {spotData?.ticker || 'SPX'} — {tf.toUpperCase()}</div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
           {['1d', '1h', '15m', '5m'].map((t) => (
             <button

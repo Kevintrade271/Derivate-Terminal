@@ -48,7 +48,7 @@ def gex_term_endpoint(query: TickerQuery = Depends()):
 
 @router.get("/dex", response_model=DEXResponse)
 def dex_endpoint(
-    ticker: str = Query(default="^SPX", pattern=r"^[\^A-Z0-9]{1,10}$"),
+    ticker: str = Query(default="^SPX", pattern=r"^[\^A-Z0-9=]{1,10}$"),
     expiries: int = Query(default=5, ge=1, le=20),
 ):
     """Delta Exposure (DEX) profile by strike."""
@@ -62,7 +62,7 @@ def dex_endpoint(
 
 @router.get("/oi", response_model=OIResponse)
 def oi_endpoint(
-    ticker: str = Query(default="^SPX", pattern=r"^[\^A-Z0-9]{1,10}$"),
+    ticker: str = Query(default="^SPX", pattern=r"^[\^A-Z0-9=]{1,10}$"),
     expiries: int = Query(default=3, ge=1, le=20),
 ):
     """Open Interest by strike — Calls vs Puts."""
@@ -132,7 +132,7 @@ def oi_endpoint(
 
 @router.get("/iv-skew", response_model=IVSkewResponse)
 def iv_skew_endpoint(
-    ticker: str = Query(default="^SPX", pattern=r"^[\^A-Z0-9]{1,10}$"),
+    ticker: str = Query(default="^SPX", pattern=r"^[\^A-Z0-9=]{1,10}$"),
     expiry: int = Query(default=0, ge=0, le=50, description="Expiry index (0 = nearest)"),
 ):
     """Implied Volatility skew for a single expiration."""
@@ -184,7 +184,7 @@ def iv_skew_endpoint(
 
 @router.get("/spot", response_model=SpotResponse)
 def spot_endpoint(
-    ticker: str = Query(default="^SPX", pattern=r"^[\^A-Z0-9]{1,10}$"),
+    ticker: str = Query(default="^SPX", pattern=r"^[\^A-Z0-9=]{1,10}$"),
     tf: str = Query(default="1d", pattern=r"^(1d|1h|15m|5m)$"),
 ):
     """Current spot price and recent candle history."""
