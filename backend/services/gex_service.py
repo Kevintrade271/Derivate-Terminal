@@ -173,6 +173,11 @@ def get_gex_profile(ticker: str = "^SPX", expiry_count: int = 5) -> GEXResponse:
         for _, row in gex_merged.iterrows()
     ]
 
+    hedging_velocity_1pct = round(total_gex * 0.01, 4)
+    zero_gamma_distance_pts = round(spot_price - zero_gamma, 2)
+    zero_gamma_distance_pct = round(((spot_price - zero_gamma) / spot_price) * 100.0, 2) if spot_price > 0 else 0.0
+    gamma_regime_state = "STABILIZING (PIN)" if total_gex >= 0 else "ACCELERATING (TREND)"
+
     return GEXResponse(
         spot_price=round(spot_price, 2),
         call_wall_strike=float(call_wall["strike"]),
@@ -185,6 +190,10 @@ def get_gex_profile(ticker: str = "^SPX", expiry_count: int = 5) -> GEXResponse:
         total_gex_0dte=round(total_gex_0dte, 4),
         absolute_gamma=round(absolute_gamma, 4),
         regime=regime,
+        hedging_velocity_1pct=hedging_velocity_1pct,
+        zero_gamma_distance_pts=zero_gamma_distance_pts,
+        zero_gamma_distance_pct=zero_gamma_distance_pct,
+        gamma_regime_state=gamma_regime_state,
         gex_by_strike=strikes_list,
     )
 

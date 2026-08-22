@@ -109,6 +109,28 @@ body {
   overflow-x: hidden;
 }
 
+/* Tabular numbers globally for high-frequency price updates */
+code, kbd, samp, pre, .font-mono, [style*="font-mono"],
+.key-level-value, .key-level-sub, .header-ticker-price, .header-ticker-change {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+@keyframes live-beacon {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 7px rgba(0, 230, 118, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 230, 118, 0); }
+}
+
+.live-beacon-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00e676;
+  animation: live-beacon 2s infinite ease-in-out;
+  display: inline-block;
+}
+
 /* Subtle grid background */
 body::before {
   content: '';

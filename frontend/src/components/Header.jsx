@@ -38,6 +38,7 @@ export default function Header({ currentTicker, onSelectTicker, spotData, gexDat
         {/* Left: Active Asset Info */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span className="live-beacon-dot" style={{ marginRight: '2px' }} title="Conexión en Vivo Activa" />
             <span style={{ fontSize: '18px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em', fontFamily: 'var(--font-mono)' }}>
               {currentTicker}
             </span>

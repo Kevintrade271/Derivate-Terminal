@@ -54,6 +54,10 @@ class GEXResponse(BaseModel):
     total_gex_0dte: float
     absolute_gamma: float
     regime: str  # "POSITIVE" or "NEGATIVE"
+    hedging_velocity_1pct: float = 0.0
+    zero_gamma_distance_pts: float = 0.0
+    zero_gamma_distance_pct: float = 0.0
+    gamma_regime_state: str = "STABILIZING (PIN)"
     gex_by_strike: list[GEXStrike]
 
 
