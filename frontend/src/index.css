@@ -8,6 +8,10 @@
 /* ---------------------------------------------------------------------------
    CSS Custom Properties (Design Tokens)
    --------------------------------------------------------------------------- */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   /* Backgrounds */
   --bg-primary: #000000;
@@ -131,11 +135,11 @@ body::before {
    --------------------------------------------------------------------------- */
 .app-layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
-  grid-template-rows: 64px 1fr;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
   grid-template-areas:
-    "sidebar header"
-    "sidebar main";
+    "header"
+    "main";
   min-height: 100vh;
 }
 
@@ -152,14 +156,7 @@ body::before {
 }
 
 .app-sidebar {
-  grid-area: sidebar;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-glass);
-  backdrop-filter: blur(var(--glass-blur));
-  border-right: var(--glass-border);
-  padding: var(--gap-lg) var(--gap-md);
-  z-index: 10;
+  display: none;
 }
 
 .app-main {
@@ -326,19 +323,19 @@ body::before {
    Cards (Glass)
    --------------------------------------------------------------------------- */
 .card {
-  background: var(--bg-card);
-  backdrop-filter: blur(var(--glass-blur));
-  border: var(--glass-border);
-  border-radius: var(--radius-lg);
-  padding: var(--gap-lg);
-  box-shadow: var(--shadow-card);
+  background: transparent;
+  backdrop-filter: none;
+  border: none;
+  border-radius: 0;
+  padding: var(--gap-sm) 0;
+  box-shadow: none;
   transition: all var(--transition-base);
 }
 
 .card:hover {
-  background: var(--bg-card-hover);
-  box-shadow: var(--shadow-elevated);
-  transform: translateY(-1px);
+  background: transparent;
+  box-shadow: none;
+  transform: none;
 }
 
 .card-title {

@@ -1,0 +1,15 @@
+{
+    "^SPX": [
+        {
+            "date": "2026-08-21",
+            "ticker": "^SPX",
+            "spot_price": 7674.37,
+            "total_gex": -3.2125,
+            "total_gex_0dte": 9.7879,
+            "total_dex": 136.4376,
+            "call_oi": 1159064,
+            "put_oi": 1251656,
+            "total_oi": 2410720
+        }
+    ]
+}

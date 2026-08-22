@@ -1,143 +1,147 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchGEX, fetchGexTerm, fetchDEX, fetchVannaCharm, fetchOI, fetchIVSkew, fetchSpot } from '../api/client';
+import { useState, useEffect } from 'react';
+import { useQueries } from '@tanstack/react-query';
+import {
+  fetchGEX, fetchGexTerm, fetchDEX, fetchDEXChange, fetchVannaCharm,
+  fetchOI, fetchSpot, fetchGEXHeatmap, fetchTrace, fetchIVSkew
+} from '../api/client';
 import KeyLevels from '../components/KeyLevels';
 import SpotChart from '../components/SpotChart';
+import TraceChart from '../components/TraceChart';
 import GexProfile from '../components/GexProfile';
 import GexTermStructure from '../components/GexTermStructure';
 import DexProfile from '../components/DexProfile';
 import VannaCharmProfile from '../components/VannaCharmProfile';
 import OIChart from '../components/OIChart';
-import IVSkew from '../components/IVSkew';
+import GEXHeatmap from '../components/GEXHeatmap';
+import VolumeProfile from '../components/VolumeProfile';
+import PCRatioHistory from '../components/PCRatioHistory';
+import { Flex, Button, Text } from '@tremor/react';
 
-export default function Dashboard({ ticker, onSpotData, setGlobalGex, setGlobalOi, setLoading, loading }) {
-  const [gexData, setGexData] = useState(null);
-  const [gexTermData, setGexTermData] = useState(null);
-  const [dexData, setDexData] = useState(null);
-  const [vcData, setVcData] = useState(null);
-  const [oiData, setOiData] = useState(null);
-  const [ivData, setIvData] = useState(null);
-  const [spotData, setSpotData] = useState(null);
-  const [tf, setTf] = useState('1d');
+export default function Dashboard({ ticker, onSpotData, setGlobalGex, setGlobalOi, setLoading, loading, instanceId = 1 }) {
+  const [tf, setTf] = useState('5m');
   const [dteFilter, setDteFilter] = useState('ALL');
-  const [error, setError] = useState(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const exp = dteFilter === '0DTE' ? 1 : 5;
-      const gexTermExp = dteFilter === '0DTE' ? 1 : 15;
-      const oiExp = dteFilter === '0DTE' ? 1 : 3;
+  const exp = dteFilter === '0DTE' ? 1 : 5;
+  const gexTermExp = dteFilter === '0DTE' ? 1 : 15;
+  const oiExp = dteFilter === '0DTE' ? 1 : 3;
+  const traceInterval = tf === '1d' || tf === '1h' ? '5m' : tf;
 
-      // Fetch all data in parallel
-      const [gex, gexTerm, dex, vc, oi, iv, spot] = await Promise.allSettled([
-        fetchGEX(ticker, exp),
-        fetchGexTerm(ticker, gexTermExp),
-        fetchDEX(ticker, exp),
-        fetchVannaCharm(ticker, exp),
-        fetchOI(ticker, oiExp),
-        fetchIVSkew(ticker, 0),
-        fetchSpot(ticker, tf),
-      ]);
+  const results = useQueries({
+    queries: [
+      { queryKey: ['gex', ticker, exp], queryFn: () => fetchGEX(ticker, exp), refetchInterval: 60000 },
+      { queryKey: ['gexTerm', ticker, gexTermExp], queryFn: () => fetchGexTerm(ticker, gexTermExp), refetchInterval: 60000 },
+      { queryKey: ['dex', ticker, exp], queryFn: () => fetchDEX(ticker, exp), refetchInterval: 60000 },
+      { queryKey: ['vc', ticker, exp], queryFn: () => fetchVannaCharm(ticker, exp), refetchInterval: 60000 },
+      { queryKey: ['oi', ticker, oiExp], queryFn: () => fetchOI(ticker, oiExp), refetchInterval: 60000 },
+      { queryKey: ['spot', ticker, tf], queryFn: () => fetchSpot(ticker, tf), refetchInterval: 3000 },
+      { queryKey: ['iv', ticker, 0], queryFn: () => fetchIVSkew(ticker, 0), refetchInterval: 60000 },
+      { queryKey: ['gexHeatmap', ticker], queryFn: () => fetchGEXHeatmap(ticker, 8), refetchInterval: 60000 },
+      { queryKey: ['dexChange', ticker, exp], queryFn: () => fetchDEXChange(ticker, exp, 300), refetchInterval: 10000 },
+      { queryKey: ['trace', ticker, traceInterval], queryFn: () => fetchTrace(ticker, traceInterval), refetchInterval: 10000 },
+    ]
+  });
 
-      if (gex.status === 'fulfilled') {
-        setGexData(gex.value);
-        if (setGlobalGex) setGlobalGex(gex.value);
-      }
-      if (gexTerm.status === 'fulfilled') setGexTermData(gexTerm.value);
-      if (dex.status === 'fulfilled') setDexData(dex.value);
-      if (vc.status === 'fulfilled') setVcData(vc.value);
-      if (oi.status === 'fulfilled') {
-        setOiData(oi.value);
-        if (setGlobalOi) setGlobalOi(oi.value);
-      }
-      if (iv.status === 'fulfilled') setIvData(iv.value);
-      if (spot.status === 'fulfilled') {
-        setSpotData(spot.value);
-        onSpotData(spot.value);
-      }
+  const [
+    { data: gexData, isLoading: isLoadingGex, error: gexError },
+    { data: gexTermData },
+    { data: dexData },
+    { data: vcData },
+    { data: oiData },
+    { data: spotData },
+    { data: ivData },
+    { data: heatmapData },
+    { data: dexChangeData },
+    { data: traceData },
+  ] = results;
 
-      // Check if all failed
-      const allFailed = [gex, dex, oi, iv, spot].every(r => r.status === 'rejected');
-      if (allFailed) {
-        setError('No se pudo conectar con el backend. Asegúrate de que FastAPI esté corriendo en 127.0.0.1:8000');
-      }
-    } catch (err) {
-      setError('Error de conexión con el backend.');
-    } finally {
-      setLoading(false);
-    }
-  }, [ticker, onSpotData, setGlobalGex, setGlobalOi, setLoading, tf, dteFilter]);
+  const isLoading = results.some(r => r.isLoading);
+  const error = gexError ? 'Error de conexión con el backend.' : null;
 
   useEffect(() => {
-    loadData();
-    // Recarga los datos automáticamente cada 5 minutos (300,000 ms)
-    const interval = setInterval(() => {
-      loadData();
-    }, 5 * 60 * 1000);
+    document.title = `${ticker} — QuantDesk Derivatives Terminal`;
+  }, [ticker]);
 
-    return () => clearInterval(interval);
-  }, [loadData]);
-
-  // Expose refresh function
   useEffect(() => {
-    window.__dashboardRefresh = loadData;
-    return () => { delete window.__dashboardRefresh; };
-  }, [loadData]);
+    setLoading(isLoading);
+  }, [isLoading, setLoading]);
+
+  useEffect(() => {
+    if (gexData && setGlobalGex) setGlobalGex(gexData);
+  }, [gexData, setGlobalGex]);
+
+  useEffect(() => {
+    if (oiData && setGlobalOi) setGlobalOi(oiData);
+  }, [oiData, setGlobalOi]);
+
+  useEffect(() => {
+    if (spotData && onSpotData) onSpotData(spotData);
+  }, [spotData, onSpotData]);
 
   return (
-    <div className="app-main">
+    <div className="app-main" style={{ padding: '0', overflowY: 'visible' }}>
       {error && <div className="error-msg">{error}</div>}
 
       {/* Key Levels & Filters */}
       <div style={{ marginBottom: 'var(--gap-md)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Filtro de Expiración:</span>
-          <button 
+        <Flex justifyContent="start" className="gap-3">
+          <Text>Filtro de Expiración:</Text>
+          <Button 
+            variant={dteFilter === 'ALL' ? 'primary' : 'secondary'}
+            size="xs"
             onClick={() => setDteFilter('ALL')}
-            style={{
-              background: dteFilter === 'ALL' ? 'rgba(68,138,255,0.2)' : 'transparent',
-              border: '1px solid rgba(68,138,255,0.3)',
-              color: dteFilter === 'ALL' ? '#448aff' : 'var(--text-secondary)',
-              padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px'
-            }}>
+          >
             ALL
-          </button>
-          <button 
+          </Button>
+          <Button 
+            variant={dteFilter === '0DTE' ? 'primary' : 'secondary'}
+            size="xs"
             onClick={() => setDteFilter('0DTE')}
-            style={{
-              background: dteFilter === '0DTE' ? 'rgba(68,138,255,0.2)' : 'transparent',
-              border: '1px solid rgba(68,138,255,0.3)',
-              color: dteFilter === '0DTE' ? '#448aff' : 'var(--text-secondary)',
-              padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px'
-            }}>
+          >
             0DTE
-          </button>
-        </div>
-        <KeyLevels gexData={gexData} />
+          </Button>
+        </Flex>
+        {gexData && <KeyLevels gexData={gexData} />}
       </div>
 
-      {/* Dashboard Grid */}
-      <div className="dashboard-grid">
-        {/* Spot Chart — full width */}
+      {/* Side-by-Side: TradingView Candlestick Chart (Left) + SpotGamma Vertical Strike TRACE (Right) */}
+      <div className="spot-trace-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)',
+        gap: '20px',
+        alignItems: 'start',
+        marginBottom: '20px',
+      }}>
         <SpotChart spotData={spotData} gexData={gexData} ivData={ivData} tf={tf} onTfChange={setTf} />
+        {gexData && <TraceChart gexData={gexData} dexData={dexData} ticker={ticker} />}
+      </div>
 
-        {/* GEX Profile — full width */}
-        <GexProfile gexData={gexData} />
-        
-        {/* GEX Term Structure */}
-        <GexTermStructure termData={gexTermData} />
+      {/* Main Analysis Grid */}
+      <div className="dashboard-grid">
+        {/* 1. GEX Profile */}
+        {gexData && <GexProfile gexData={gexData} />}
 
-        {/* OI & DEX */}
-        <OIChart oiData={oiData} />
-        <DexProfile dexData={dexData} />
+        {/* 2. DEX Profile (Directly under GEX) */}
+        {dexData && <DexProfile dexData={dexData} dexChangeData={dexChangeData} />}
 
-        {/* Vanna & Charm */}
-        <VannaCharmProfile vcData={vcData} />
+        {/* 3. Vanna & Charm Profile */}
+        {vcData && <VannaCharmProfile vcData={vcData} />}
 
-        {/* IV Skew */}
-        <IVSkew ivData={ivData} spotPrice={spotData?.price} />
+        {/* 4. Volume Profile */}
+        {gexData && <VolumeProfile gexData={gexData} />}
+
+        {/* 5. Open Interest Distribution */}
+        {oiData && <OIChart oiData={oiData} />}
+
+        {/* 6. GEX Term Structure */}
+        {gexTermData && <GexTermStructure termData={gexTermData} />}
+
+        {/* 7. Put/Call Ratio History (Enlarged Full-Width) */}
+        <PCRatioHistory oiData={oiData} />
+
+        {/* 8. GEX Heatmap */}
+        {heatmapData && <GEXHeatmap heatmapData={heatmapData} />}
       </div>
     </div>
   );
 }
+

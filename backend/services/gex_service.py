@@ -1,14 +1,11 @@
-"""
-GEX (Gamma Exposure) calculation service.
-Refactored from calc_gex.py — uses yfinance to fetch option chains,
-calculates per-strike gamma exposure, and identifies key levels.
-"""
+import time
 import datetime
 import pandas as pd
 import yfinance as yf
 
 from services.greeks import calc_gamma
 from models.schemas import GEXResponse, GEXStrike
+from services.cboe_data import get_quotes, get_spot_and_quotes
 
 
 # Risk-free rate (approximate US 3-month T-bill yield)
@@ -17,6 +14,11 @@ RISK_FREE_RATE = 0.04
 MULTIPLIER = 100
 # Filter strikes within this percentage of spot
 STRIKE_RANGE_PCT = 0.15
+
+# Rolling strike trace snapshots: ticker -> list of (timestamp, {strike: gex_billions})
+_gex_trace_snapshots: dict[str, list[tuple[float, dict[float, float]]]] = {}
+# Daily extrema per strike: ticker -> {strike: {"min": float, "max": float}}
+_gex_daily_extrema: dict[str, dict[float, dict[str, float]]] = {}
 
 
 def get_gex_profile(ticker: str = "^SPX", expiry_count: int = 5) -> GEXResponse:
@@ -28,41 +30,19 @@ def get_gex_profile(ticker: str = "^SPX", expiry_count: int = 5) -> GEXResponse:
     - call_wall / put_wall / zero_gamma key levels
     - regime classification (POSITIVE / NEGATIVE)
     """
-    asset = yf.Ticker(ticker)
-    hist = asset.history(period="1d")
-    if hist.empty:
-        raise ValueError(f"No price data available for {ticker}")
-    spot_price = float(hist["Close"].iloc[-1])
+    spot_price, df = get_spot_and_quotes(ticker)
+    if df.empty or spot_price <= 0:
+        raise ValueError(f"No options data available from CBOE for {ticker}")
 
-    options_dates = asset.options
-    if not options_dates:
-        raise ValueError(f"No options data available for {ticker}")
+    df["T"] = df["dte"] / 365.0
+    df["T"] = df["T"].clip(lower=1/365.0)
+    df = df.rename(columns={"optionType": "type"})
 
-    today = datetime.datetime.today()
-    all_rows: list[pd.DataFrame] = []
-
-    dates_to_fetch = options_dates[: min(expiry_count, len(options_dates))]
-
-    for date_str in dates_to_fetch:
-        try:
-            chain = asset.option_chain(date_str)
-        except Exception:
-            continue
-
-        exp_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-        T = max((exp_date - today).days + 1, 1) / 365.0
-
-        for frame, opt_type in [(chain.calls, "call"), (chain.puts, "put")]:
-            df = frame.copy()
-            df["T"] = T
-            df["type"] = opt_type
-            df["is_0dte"] = (date_str == options_dates[0])
-            all_rows.append(df)
-
-    if not all_rows:
-        raise ValueError("Could not fetch any option chain data")
-
-    df = pd.concat(all_rows, ignore_index=True)
+    unique_expiries = sorted(df["expiration"].unique())
+    dates_to_use = unique_expiries[: min(expiry_count, len(unique_expiries))]
+    df = df[df["expiration"].isin(dates_to_use)].copy()
+    
+    df["is_0dte"] = (df["expiration"] == unique_expiries[0])
 
     # Filter strikes within range
     lower = spot_price * (1 - STRIKE_RANGE_PCT)
@@ -92,6 +72,25 @@ def get_gex_profile(ticker: str = "^SPX", expiry_count: int = 5) -> GEXResponse:
     gex_agg.columns = ["strike", "gex_billions"]
 
     gex_merged = pd.merge(gex_agg, gex_0dte_agg, on="strike", how="left").fillna(0)
+
+    # Per-strike absolute gamma and volumes
+    if "volume" not in df.columns:
+        df["volume"] = 0.0
+    
+    df["volume"] = df["volume"].fillna(0)
+    
+    abs_gamma_agg = df.groupby("strike")["GEX_B"].apply(lambda x: x.abs().sum()).reset_index()
+    abs_gamma_agg.columns = ["strike", "absolute_gamma"]
+    
+    call_vol_agg = df[df["type"] == "call"].groupby("strike")["volume"].sum().reset_index()
+    call_vol_agg.columns = ["strike", "call_volume"]
+    
+    put_vol_agg = df[df["type"] == "put"].groupby("strike")["volume"].sum().reset_index()
+    put_vol_agg.columns = ["strike", "put_volume"]
+
+    gex_merged = pd.merge(gex_merged, abs_gamma_agg, on="strike", how="left")
+    gex_merged = pd.merge(gex_merged, call_vol_agg, on="strike", how="left")
+    gex_merged = pd.merge(gex_merged, put_vol_agg, on="strike", how="left").fillna(0)
 
     # Key levels
     call_wall_idx = gex_merged["gex_billions"].idxmax()
@@ -123,11 +122,53 @@ def get_gex_profile(ticker: str = "^SPX", expiry_count: int = 5) -> GEXResponse:
 
     regime = "POSITIVE" if total_gex > 0 else "NEGATIVE"
 
+    # Record current GEX snapshot for Strike TRACE
+    now = time.time()
+    clean_sym = ticker.upper().strip()
+    curr_map = {float(row["strike"]): round(float(row["gex_billions"]), 4) for _, row in gex_merged.iterrows()}
+
+    if clean_sym not in _gex_trace_snapshots:
+        _gex_trace_snapshots[clean_sym] = []
+    _gex_trace_snapshots[clean_sym].append((now, curr_map))
+    # Keep last 2 hours of snapshots
+    _gex_trace_snapshots[clean_sym] = [(t, m) for t, m in _gex_trace_snapshots[clean_sym] if now - t <= 7200]
+
+    # Update daily extrema
+    if clean_sym not in _gex_daily_extrema:
+        _gex_daily_extrema[clean_sym] = {}
+    for k, v in curr_map.items():
+        if k not in _gex_daily_extrema[clean_sym]:
+            _gex_daily_extrema[clean_sym][k] = {"min": v, "max": v}
+        else:
+            _gex_daily_extrema[clean_sym][k]["min"] = min(_gex_daily_extrema[clean_sym][k]["min"], v)
+            _gex_daily_extrema[clean_sym][k]["max"] = max(_gex_daily_extrema[clean_sym][k]["max"], v)
+
+    def get_past_snapshot(seconds_ago: int) -> dict[float, float]:
+        target = now - seconds_ago
+        candidates = [(abs(t - target), m) for t, m in _gex_trace_snapshots[clean_sym] if t <= now - (seconds_ago * 0.4)]
+        if candidates:
+            candidates.sort(key=lambda x: x[0])
+            return candidates[0][1]
+        return {}
+
+    snap_10m = get_past_snapshot(600)
+    snap_30m = get_past_snapshot(1800)
+    snap_60m = get_past_snapshot(3600)
+    extrema_map = _gex_daily_extrema.get(clean_sym, {})
+
     strikes_list = [
         GEXStrike(
             strike=float(row["strike"]), 
             gex_billions=round(float(row["gex_billions"]), 4),
-            gex_0dte_billions=round(float(row["gex_0dte_billions"]), 4)
+            gex_0dte_billions=round(float(row["gex_0dte_billions"]), 4),
+            absolute_gamma=round(float(row["absolute_gamma"]), 4),
+            call_volume=float(row["call_volume"]),
+            put_volume=float(row["put_volume"]),
+            gex_10m_ago=snap_10m.get(float(row["strike"])),
+            gex_30m_ago=snap_30m.get(float(row["strike"])),
+            gex_60m_ago=snap_60m.get(float(row["strike"])),
+            daily_min_gex=extrema_map.get(float(row["strike"]), {}).get("min"),
+            daily_max_gex=extrema_map.get(float(row["strike"]), {}).get("max"),
         )
         for _, row in gex_merged.iterrows()
     ]
@@ -152,41 +193,17 @@ def get_gex_term_structure(ticker: str = "^SPX", expiry_count: int = 15):
     Calculate the Gamma Exposure term structure (GEX grouped by expiration date).
     """
     from models.schemas import GEXTermResponse, GEXTermExpiry
-    asset = yf.Ticker(ticker)
-    hist = asset.history(period="1d")
-    if hist.empty:
-        raise ValueError(f"No price data available for {ticker}")
-    spot_price = float(hist["Close"].iloc[-1])
+    spot_price, df = get_spot_and_quotes(ticker)
+    if df.empty or spot_price <= 0:
+        raise ValueError(f"No options data available from CBOE for {ticker}")
 
-    options_dates = asset.options
-    if not options_dates:
-        raise ValueError(f"No options data available for {ticker}")
+    df["T"] = df["dte"] / 365.0
+    df["T"] = df["T"].clip(lower=1/365.0)
+    df = df.rename(columns={"optionType": "type", "expiration": "expiry_date"})
 
-    today = datetime.datetime.today()
-    all_rows: list[pd.DataFrame] = []
-
-    dates_to_fetch = options_dates[: min(expiry_count, len(options_dates))]
-
-    for date_str in dates_to_fetch:
-        try:
-            chain = asset.option_chain(date_str)
-        except Exception:
-            continue
-
-        exp_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-        T = max((exp_date - today).days + 1, 1) / 365.0
-
-        for frame, opt_type in [(chain.calls, "call"), (chain.puts, "put")]:
-            df = frame.copy()
-            df["T"] = T
-            df["type"] = opt_type
-            df["expiry_date"] = date_str
-            all_rows.append(df)
-
-    if not all_rows:
-        raise ValueError("Could not fetch any option chain data")
-
-    df = pd.concat(all_rows, ignore_index=True)
+    unique_expiries = sorted(df["expiry_date"].unique())
+    dates_to_use = unique_expiries[: min(expiry_count, len(unique_expiries))]
+    df = df[df["expiry_date"].isin(dates_to_use)].copy()
 
     # Filter strikes within range
     lower = spot_price * (1 - STRIKE_RANGE_PCT)
@@ -225,3 +242,96 @@ def get_gex_term_structure(ticker: str = "^SPX", expiry_count: int = 15):
         spot_price=round(spot_price, 2),
         term_structure=term_structure
     )
+
+
+def get_iv_term_structure(ticker: str = "^SPX", expiry_count: int = 10):
+    """
+    Calculate the ATM Implied Volatility term structure across expirations.
+    """
+    from models.schemas import IVTermResponse, IVTermPoint
+    spot_price, df = get_spot_and_quotes(ticker)
+    if df.empty or spot_price <= 0:
+        raise ValueError(f"No options data available from CBOE for {ticker}")
+
+    unique_expiries = sorted(df["expiration"].unique())
+    dates_to_use = unique_expiries[: min(expiry_count, len(unique_expiries))]
+    
+    term_structure = []
+    for exp in dates_to_use:
+        sub_df = df[df["expiration"] == exp]
+        if sub_df.empty:
+            continue
+        dte = int(sub_df["dte"].iloc[0])
+        sub_df = sub_df.copy()
+        sub_df["diff"] = (sub_df["strike"] - spot_price).abs()
+        min_diff = sub_df["diff"].min()
+        atm_rows = sub_df[sub_df["diff"] == min_diff]
+        valid_ivs = atm_rows["impliedVolatility"][atm_rows["impliedVolatility"] > 0]
+        atm_iv = float(valid_ivs.mean()) if not valid_ivs.empty else 0.0
+        
+        term_structure.append(
+            IVTermPoint(
+                expiry_date=exp,
+                dte=dte,
+                atm_iv=round(atm_iv, 4),
+            )
+        )
+        
+    return IVTermResponse(
+        spot_price=round(spot_price, 2),
+        ticker=ticker,
+        term_structure=term_structure,
+    )
+
+
+def get_gex_heatmap(ticker: str = "^SPX", expiry_count: int = 8):
+    """
+    Calculate Gamma Exposure matrix (Strike x Expiration).
+    """
+    from models.schemas import GEXHeatmapResponse, GEXHeatmapCell
+    spot_price, df = get_spot_and_quotes(ticker)
+    if df.empty or spot_price <= 0:
+        raise ValueError(f"No options data available from CBOE for {ticker}")
+
+    unique_expiries = sorted(df["expiration"].unique())
+    dates_to_use = unique_expiries[: min(expiry_count, len(unique_expiries))]
+    df = df[df["expiration"].isin(dates_to_use)].copy()
+
+    df["T"] = (df["dte"] / 365.0).clip(lower=1/365.0)
+    df = df.rename(columns={"optionType": "type", "expiration": "expiry_date"})
+
+    lower = spot_price * (1 - STRIKE_RANGE_PCT)
+    upper = spot_price * (1 + STRIKE_RANGE_PCT)
+    df = df[(df["strike"] > lower) & (df["strike"] < upper)].copy()
+
+    df["gamma"] = df.apply(
+        lambda row: calc_gamma(spot_price, row["strike"], row["T"], RISK_FREE_RATE, row["impliedVolatility"]),
+        axis=1,
+    )
+
+    df["GEX"] = df["gamma"] * df["openInterest"] * MULTIPLIER * (spot_price**2) * 0.01
+    df.loc[df["type"] == "put", "GEX"] = -df.loc[df["type"] == "put", "GEX"]
+    df["GEX_B"] = df["GEX"] / 1e9
+
+    grouped = df.groupby(["strike", "expiry_date"])["GEX_B"].sum().reset_index()
+
+    strikes_list = sorted([float(s) for s in grouped["strike"].unique()])
+    expiries_list = sorted([str(e) for e in grouped["expiry_date"].unique()])
+
+    cells = [
+        GEXHeatmapCell(
+            strike=float(row["strike"]),
+            expiry_date=str(row["expiry_date"]),
+            gex_billions=round(float(row["GEX_B"]), 4),
+        )
+        for _, row in grouped.iterrows()
+    ]
+
+    return GEXHeatmapResponse(
+        spot_price=round(spot_price, 2),
+        ticker=ticker,
+        strikes=strikes_list,
+        expiries=expiries_list,
+        cells=cells,
+    )
+

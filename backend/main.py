@@ -11,6 +11,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from routers.options import router as options_router
+from routers.history import router as history_router
+
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
 
 app = FastAPI(
     title="Derivatives Dashboard API",
@@ -23,9 +27,9 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=False,
-    allow_methods=["GET"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -46,11 +50,17 @@ async def add_security_headers(request: Request, call_next):
 # Routes
 # ---------------------------------------------------------------------------
 app.include_router(options_router)
+app.include_router(history_router)
 
 
 @app.get("/")
 def health():
     return {"status": "ok", "service": "Derivatives Dashboard API"}
+
+
+@app.on_event("startup")
+async def startup():
+    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
 
 
 # ---------------------------------------------------------------------------

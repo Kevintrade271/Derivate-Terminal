@@ -4,21 +4,27 @@ import { createChart, ColorType, LineStyle, CandlestickSeries } from 'lightweigh
 export default function SpotChart({ spotData, gexData, ivData, tf, onTfChange }) {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
+  const seriesRef = useRef(null);
+  const priceLinesRef = useRef([]);
+  const isInitialFitRef = useRef(false);
 
+  // 1. Initialize & maintain Chart instance
   useEffect(() => {
-    if (!chartContainerRef.current || !spotData?.candles?.length) return;
-
-    // Cleanup previous chart
-    if (chartRef.current) {
-      chartRef.current.remove();
-      chartRef.current = null;
-    }
+    if (!chartContainerRef.current) return;
 
     const container = chartContainerRef.current;
 
+    // Clean up previous instance if any
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+      seriesRef.current = null;
+      priceLinesRef.current = [];
+    }
+
     const chart = createChart(container, {
-      width: container.clientWidth,
-      height: 380,
+      width: container.clientWidth || 600,
+      height: 640,
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#94a3b8',
@@ -39,13 +45,32 @@ export default function SpotChart({ spotData, gexData, ivData, tf, onTfChange })
       },
       timeScale: {
         borderColor: 'rgba(148, 163, 184, 0.1)',
-        timeVisible: false,
+        timeVisible: tf !== '1d',
+        secondsVisible: false,
+      },
+      localization: {
+        timeFormatter: (timestamp) => {
+          const date = new Date(timestamp * 1000);
+          return date.toLocaleTimeString('en-US', {
+            timeZone: 'America/New_York',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+        },
+        dateFormatter: (timestamp) => {
+          const date = new Date(timestamp * 1000);
+          return date.toLocaleDateString('en-US', {
+            timeZone: 'America/New_York',
+            month: 'short',
+            day: 'numeric',
+          });
+        },
       },
     });
 
     chartRef.current = chart;
 
-    // Candlestick series
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#00e676',
       downColor: '#ff1744',
@@ -55,94 +80,23 @@ export default function SpotChart({ spotData, gexData, ivData, tf, onTfChange })
       wickUpColor: '#00e676',
     });
 
-    const candles = spotData.candles.map((c) => ({
-      time: c.time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
+    seriesRef.current = candlestickSeries;
+    isInitialFitRef.current = false;
 
-    candlestickSeries.setData(candles);
-
-    // Add key levels as horizontal lines
-    if (gexData) {
-      if (gexData.call_wall_strike) {
-        candlestickSeries.createPriceLine({
-          price: gexData.call_wall_strike,
-          color: '#00e676',
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'Call Wall',
-        });
-      }
-      if (gexData.put_wall_strike) {
-        candlestickSeries.createPriceLine({
-          price: gexData.put_wall_strike,
-          color: '#ff1744',
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'Put Wall',
-        });
-      }
-      if (gexData.zero_gamma) {
-        candlestickSeries.createPriceLine({
-          price: gexData.zero_gamma,
-          color: '#e2e8f0', // White/Gray for contrast
-          lineWidth: 2,
-          lineStyle: LineStyle.Solid,
-          axisLabelVisible: true,
-          title: 'Gamma Flip',
-        });
-      }
+    // If candles already exist upon mount, set them immediately
+    if (spotData?.candles?.length) {
+      const initialCandles = spotData.candles.map((c) => ({
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }));
+      candlestickSeries.setData(initialCandles);
+      chart.timeScale().fitContent();
+      isInitialFitRef.current = true;
     }
 
-    // Expected Move calculation
-    if (ivData?.iv_points?.length && spotData?.price) {
-      const spot = spotData.price;
-      // Find ATM IV
-      let atmPoint = ivData.iv_points[0];
-      let minDiff = Infinity;
-      ivData.iv_points.forEach(p => {
-        const diff = Math.abs(p.strike - spot);
-        if (diff < minDiff) {
-          minDiff = diff;
-          atmPoint = p;
-        }
-      });
-
-      const atmIv = atmPoint.call_iv || atmPoint.put_iv;
-      if (atmIv) {
-        // Daily expected move formula: Spot * (IV / sqrt(252))
-        const expectedMove = spot * (atmIv / Math.sqrt(252));
-        const upperEM = spot + expectedMove;
-        const lowerEM = spot - expectedMove;
-
-        candlestickSeries.createPriceLine({
-          price: upperEM,
-          color: 'rgba(255, 152, 0, 0.8)',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          axisLabelVisible: true,
-          title: '+1σ EM',
-        });
-
-        candlestickSeries.createPriceLine({
-          price: lowerEM,
-          color: 'rgba(255, 152, 0, 0.8)',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          axisLabelVisible: true,
-          title: '-1σ EM',
-        });
-      }
-    }
-
-    chart.timeScale().fitContent();
-
-    // Resize handler
     const handleResize = () => {
       if (chartRef.current && container) {
         chartRef.current.applyOptions({ width: container.clientWidth });
@@ -156,28 +110,128 @@ export default function SpotChart({ spotData, gexData, ivData, tf, onTfChange })
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
+        seriesRef.current = null;
+        priceLinesRef.current = [];
       }
     };
-  }, [spotData, gexData, ivData]);
+  }, [tf]); // Re-create chart when timeframe changes
 
-  if (!spotData?.candles?.length) {
-    return (
-      <div className="card span-2">
-        <div className="card-title"><span className="dot blue" /> Precio {spotData?.ticker || 'SPX'}</div>
-        <div className="loading-container">
-          <div className="spinner" />
-          <span>Cargando gráfico...</span>
-        </div>
-      </div>
-    );
-  }
+  // 2. Real-time Candle Stream Updates
+  useEffect(() => {
+    if (!seriesRef.current || !spotData?.candles?.length) return;
+
+    const candles = spotData.candles.map((c) => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+
+    seriesRef.current.setData(candles);
+
+    if (!isInitialFitRef.current && chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+      isInitialFitRef.current = true;
+    }
+  }, [spotData]);
+
+  // 3. Draw & Update Key Levels
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+
+    // Clear existing price lines
+    priceLinesRef.current.forEach((line) => {
+      try {
+        series.removePriceLine(line);
+      } catch (e) {}
+    });
+    priceLinesRef.current = [];
+
+    // Add GEX levels
+    if (gexData) {
+      if (gexData.call_wall_strike) {
+        const line = series.createPriceLine({
+          price: gexData.call_wall_strike,
+          color: '#00e676',
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'Call Wall',
+        });
+        priceLinesRef.current.push(line);
+      }
+      if (gexData.put_wall_strike) {
+        const line = series.createPriceLine({
+          price: gexData.put_wall_strike,
+          color: '#ff1744',
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'Put Wall',
+        });
+        priceLinesRef.current.push(line);
+      }
+      if (gexData.zero_gamma) {
+        const line = series.createPriceLine({
+          price: gexData.zero_gamma,
+          color: '#e2e8f0',
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: 'Gamma Flip',
+        });
+        priceLinesRef.current.push(line);
+      }
+    }
+
+    // Add Expected Move lines
+    if (ivData?.iv_points?.length && spotData?.price) {
+      const spot = spotData.price;
+      let atmPoint = ivData.iv_points[0];
+      let minDiff = Infinity;
+      ivData.iv_points.forEach((p) => {
+        const diff = Math.abs(p.strike - spot);
+        if (diff < minDiff) {
+          minDiff = diff;
+          atmPoint = p;
+        }
+      });
+
+      const atmIv = atmPoint.call_iv || atmPoint.put_iv;
+      if (atmIv) {
+        const expectedMove = spot * (atmIv / Math.sqrt(252));
+        const upperEM = spot + expectedMove;
+        const lowerEM = spot - expectedMove;
+
+        const lineUp = series.createPriceLine({
+          price: upperEM,
+          color: 'rgba(255, 152, 0, 0.8)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: '+1σ EM',
+        });
+        const lineDown = series.createPriceLine({
+          price: lowerEM,
+          color: 'rgba(255, 152, 0, 0.8)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: '-1σ EM',
+        });
+        priceLinesRef.current.push(lineUp, lineDown);
+      }
+    }
+  }, [gexData, ivData, spotData?.price]);
 
   return (
-    <div className="card span-2 fade-in" id="spot-chart-card">
+    <div className="card fade-in" id="spot-chart-card">
       <div className="card-title" style={{ display: 'flex', alignItems: 'center' }}>
         <div><span className="dot blue" /> Precio {spotData?.ticker || 'SPX'} — {tf.toUpperCase()}</div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          {['1d', '1h', '15m', '5m'].map((t) => (
+          {['1d', '1h', '15m', '5m', '3m', '1m'].map((t) => (
             <button
               key={t}
               onClick={() => onTfChange(t)}
@@ -189,7 +243,7 @@ export default function SpotChart({ spotData, gexData, ivData, tf, onTfChange })
                 borderRadius: '4px',
                 cursor: 'pointer',
                 fontSize: '11px',
-                fontFamily: 'var(--font-mono)'
+                fontFamily: 'var(--font-mono)',
               }}
             >
               {t.toUpperCase()}
@@ -197,7 +251,14 @@ export default function SpotChart({ spotData, gexData, ivData, tf, onTfChange })
           ))}
         </div>
       </div>
-      <div className="chart-container" ref={chartContainerRef} />
+      <div className="chart-container" ref={chartContainerRef} style={{ minHeight: 640, position: 'relative' }}>
+        {!spotData?.candles?.length && (
+          <div className="loading-container" style={{ position: 'absolute', inset: 0, zIndex: 5, background: 'rgba(10,14,23,0.8)' }}>
+            <div className="spinner" />
+            <span>Cargando gráfico de velas...</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

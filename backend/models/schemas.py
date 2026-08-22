@@ -32,6 +32,14 @@ class GEXStrike(BaseModel):
     strike: float
     gex_billions: float
     gex_0dte_billions: float = 0.0
+    absolute_gamma: float = 0.0
+    call_volume: float = 0.0
+    put_volume: float = 0.0
+    gex_10m_ago: float | None = None
+    gex_30m_ago: float | None = None
+    gex_60m_ago: float | None = None
+    daily_min_gex: float | None = None
+    daily_max_gex: float | None = None
 
 
 class GEXResponse(BaseModel):
@@ -80,6 +88,29 @@ class DEXResponse(BaseModel):
     max_delta_value: float
     total_dex: float
     dex_by_strike: list[DEXStrike]
+
+
+# ---------------------------------------------------------------------------
+# DEX Change / Delta Flow
+# ---------------------------------------------------------------------------
+class DEXChangeStrike(BaseModel):
+    strike: float
+    delta_change_billions: float
+    call_delta_change: float
+    put_delta_change: float
+    action: str  # "BUYING" or "SELLING"
+
+
+class DEXChangeResponse(BaseModel):
+    ticker: str
+    spot_price: float
+    previous_spot_price: float
+    spot_change_pct: float
+    net_delta_flow_billions: float
+    call_delta_flow_billions: float
+    put_delta_flow_billions: float
+    action_summary: str  # "NET BUYING PRESSURE" or "NET SELLING PRESSURE"
+    delta_change_by_strike: list[DEXChangeStrike]
 
 # ---------------------------------------------------------------------------
 # Vanna and Charm
@@ -148,4 +179,57 @@ class SpotResponse(BaseModel):
     ticker: str
     price: float
     change_pct: float
+    today_open: float = 0.0
     candles: list[SpotCandle]
+
+
+# ---------------------------------------------------------------------------
+# TRACE — Cumulative Delta Flow & Divergence
+# ---------------------------------------------------------------------------
+class TracePoint(BaseModel):
+    time: int
+    price: float
+    delta_flow_m: float
+    cumulative_flow_m: float
+
+
+class TraceResponse(BaseModel):
+    ticker: str
+    spot_price: float
+    net_trace_flow_m: float
+    regime: str  # "BULLISH_FLOW", "BEARISH_FLOW"
+    divergence_signal: str | None = None
+    points: list[TracePoint]
+
+
+# ---------------------------------------------------------------------------
+# IV Term Structure
+# ---------------------------------------------------------------------------
+class IVTermPoint(BaseModel):
+    expiry_date: str
+    dte: int
+    atm_iv: float
+
+
+class IVTermResponse(BaseModel):
+    spot_price: float
+    ticker: str
+    term_structure: list[IVTermPoint]
+
+
+# ---------------------------------------------------------------------------
+# GEX Heatmap
+# ---------------------------------------------------------------------------
+class GEXHeatmapCell(BaseModel):
+    strike: float
+    expiry_date: str
+    gex_billions: float
+
+
+class GEXHeatmapResponse(BaseModel):
+    spot_price: float
+    ticker: str
+    strikes: list[float]
+    expiries: list[str]
+    cells: list[GEXHeatmapCell]
+

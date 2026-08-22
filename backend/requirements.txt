@@ -3,3 +3,4 @@ yfinance
 pandas
 numpy
 scipy
+fastapi-cache2

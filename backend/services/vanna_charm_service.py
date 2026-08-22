@@ -4,6 +4,7 @@ import yfinance as yf
 
 from services.greeks import calc_vanna, calc_charm
 from models.schemas import VannaCharmResponse, VannaCharmStrike
+from services.cboe_data import get_quotes, get_spot_and_quotes
 
 
 RISK_FREE_RATE = 0.04
@@ -12,40 +13,17 @@ STRIKE_RANGE_PCT = 0.15
 
 
 def get_vanna_charm_profile(ticker: str = "^SPX", expiry_count: int = 5) -> VannaCharmResponse:
-    asset = yf.Ticker(ticker)
-    hist = asset.history(period="1d")
-    if hist.empty:
-        raise ValueError(f"No price data available for {ticker}")
-    spot_price = float(hist["Close"].iloc[-1])
+    spot_price, df = get_spot_and_quotes(ticker)
+    if df.empty or spot_price <= 0:
+        raise ValueError(f"No options data available from CBOE for {ticker}")
 
-    options_dates = asset.options
-    if not options_dates:
-        raise ValueError(f"No options data available for {ticker}")
+    df["T"] = df["dte"] / 365.0
+    df["T"] = df["T"].clip(lower=1/365.0)
+    df = df.rename(columns={"optionType": "type"})
 
-    today = datetime.datetime.today()
-    all_rows: list[pd.DataFrame] = []
-
-    dates_to_fetch = options_dates[: min(expiry_count, len(options_dates))]
-
-    for date_str in dates_to_fetch:
-        try:
-            chain = asset.option_chain(date_str)
-        except Exception:
-            continue
-
-        exp_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-        T = max((exp_date - today).days + 1, 1) / 365.0
-
-        for frame, opt_type in [(chain.calls, "call"), (chain.puts, "put")]:
-            df = frame.copy()
-            df["T"] = T
-            df["type"] = opt_type
-            all_rows.append(df)
-
-    if not all_rows:
-        raise ValueError("Could not fetch any option chain data")
-
-    df = pd.concat(all_rows, ignore_index=True)
+    unique_expiries = sorted(df["expiration"].unique())
+    dates_to_use = unique_expiries[: min(expiry_count, len(unique_expiries))]
+    df = df[df["expiration"].isin(dates_to_use)].copy()
 
     lower = spot_price * (1 - STRIKE_RANGE_PCT)
     upper = spot_price * (1 + STRIKE_RANGE_PCT)

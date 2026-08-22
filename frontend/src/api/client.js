@@ -53,3 +53,36 @@ export function fetchIVSkew(ticker = '^SPX', expiry = 0) {
 export function fetchSpot(ticker = '^SPX', tf = '1d') {
   return fetchJSON('/spot', { ticker, tf });
 }
+
+export function fetchHistory(ticker = '^SPX') {
+  return fetchJSON(`/history/${ticker}`);
+}
+
+export async function triggerHistoryUpdate(ticker = '^SPX') {
+  const url = new URL(`${API_BASE}/history/${ticker}/update`);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `API error: ${response.status}`);
+  }
+  return response.json();
+}
+
+export function fetchIVTerm(ticker = '^SPX', expiries = 10) {
+  return fetchJSON('/iv-term', { ticker, expiries });
+}
+
+export function fetchGEXHeatmap(ticker = '^SPX', expiries = 8) {
+  return fetchJSON('/gex-heatmap', { ticker, expiries });
+}
+
+export function fetchDEXChange(ticker = '^SPX', expiries = 5, window = 300) {
+  return fetchJSON('/dex-change', { ticker, expiries, window });
+}
+
+export function fetchTrace(ticker = '^SPX', interval = '5m') {
+  return fetchJSON('/trace', { ticker, interval });
+}

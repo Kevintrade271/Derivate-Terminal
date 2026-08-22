@@ -46,8 +46,8 @@ export default function IVSkew({ ivData, spotPrice }) {
           Exp: {ivData.expiry_date}
         </span>
       </div>
-      <div className="chart-container" style={{ minHeight: 260 }}>
-        <ResponsiveContainer width="100%" height={260}>
+      <div className="chart-container" style={{ minHeight: 400 }}>
+        <ResponsiveContainer width="100%" height={400}>
           <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
             <XAxis

@@ -37,8 +37,8 @@ export default function GexTermStructure({ termData }) {
   return (
     <div className="card span-2 fade-in" id="gex-term-card">
       <div className="card-title"><span className="dot amber" /> Estructura Temporal del GEX por Expiración</div>
-      <div className="chart-container" style={{ minHeight: 220 }}>
-        <ResponsiveContainer width="100%" height={220}>
+      <div className="chart-container" style={{ minHeight: 350 }}>
+        <ResponsiveContainer width="100%" height={350}>
           <BarChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
             <XAxis

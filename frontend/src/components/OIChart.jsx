@@ -59,8 +59,8 @@ export default function OIChart({ oiData }) {
           P/C Ratio: {oiData.put_call_ratio?.toFixed(2)}
         </span>
       </div>
-      <div className="chart-container" style={{ minHeight: 260 }}>
-        <ResponsiveContainer width="100%" height={260}>
+      <div className="chart-container" style={{ minHeight: 400 }}>
+        <ResponsiveContainer width="100%" height={400}>
           <BarChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
             <XAxis
